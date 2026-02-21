@@ -16,7 +16,7 @@ Glimpse opens a native macOS window with a WKWebView in under 50ms. You write HT
 
 **Install:** The project is at `/Users/haza/Projects/glimpse`. Import from there:
 ```js
-import { open, prompt } from '/Users/haza/Projects/glimpse/src/glimpse.mjs';
+import { open, prompt } from 'glimpseui';
 ```
 
 ---
@@ -25,7 +25,7 @@ import { open, prompt } from '/Users/haza/Projects/glimpse/src/glimpse.mjs';
 
 ### One-Shot Dialog (prompt)
 ```js
-import { prompt } from '/Users/haza/Projects/glimpse/src/glimpse.mjs';
+import { prompt } from 'glimpseui';
 
 const answer = await prompt(html, {
   width: 400, height: 300,    // window size
@@ -38,7 +38,7 @@ const answer = await prompt(html, {
 
 ### Persistent Window (open)
 ```js
-import { open } from '/Users/haza/Projects/glimpse/src/glimpse.mjs';
+import { open } from 'glimpseui';
 
 const win = open(html, options);
 win.on('ready', () => {});           // HTML loaded, DOM ready

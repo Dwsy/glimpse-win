@@ -1,14 +1,24 @@
 {
-  "name": "glimpse",
+  "name": "glimpseui",
   "version": "0.1.0",
-  "description": "Native macOS micro-UI for scripts and agents",
+  "description": "Native macOS micro-UI for scripts and agents — sub-50ms WKWebView windows with bidirectional JSON communication",
   "type": "module",
   "main": "src/glimpse.mjs",
+  "exports": {
+    ".": "./src/glimpse.mjs"
+  },
   "scripts": {
     "build": "swiftc -O src/glimpse.swift -o src/glimpse",
     "postinstall": "npm run build",
-    "test": "node test.mjs"
+    "test": "node test.mjs",
+    "publish:check": "./scripts/publish.sh --dry-run",
+    "publish:npm": "./scripts/publish.sh"
   },
+  "files": [
+    "src/glimpse.swift",
+    "src/glimpse.mjs",
+    "README.md"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -20,7 +30,19 @@
     "webview",
     "native",
     "ui",
-    "webkit"
+    "webkit",
+    "wkwebview",
+    "swift",
+    "gui",
+    "agent",
+    "dialog",
+    "prompt",
+    "overlay"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hjanuschka/glimpse"
+  },
+  "author": "hjanuschka",
   "license": "MIT"
 }
