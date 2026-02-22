@@ -34,7 +34,7 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function truncate(s, max = 30) {
+function truncate(s, max = 100) {
   if (!s) return '';
   return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
@@ -63,7 +63,6 @@ body {
 }
 #pill {
   width: fit-content;
-  overflow: hidden;
   background: rgba(0,0,0,0.45);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
