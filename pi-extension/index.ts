@@ -165,7 +165,7 @@ export default function (pi: ExtensionAPI) {
         send("editing", basename(args.path ?? ""));
         break;
       case "bash":
-        send("running", (args.command ?? "").slice(0, 30));
+        send("running", args.command ?? "");
         break;
       case "grep":
       case "find":
