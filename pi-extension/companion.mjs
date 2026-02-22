@@ -255,6 +255,7 @@ win = open(buildHTML(), {
   transparent: true,
   clickThrough: true,
   followCursor: true,
+  followMode: 'spring',
   cursorAnchor: 'top-right',
 });
 
