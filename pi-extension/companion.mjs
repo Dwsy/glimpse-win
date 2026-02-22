@@ -23,7 +23,7 @@ const STATUS_COLOR = {
 };
 
 const STATUS_LABEL = {
-  thinking:  'Thinking',
+  thinking:  'Working',
   reading:   'Reading',
   editing:   'Editing',
   running:   'Running',
@@ -341,7 +341,7 @@ win = open(buildInitialHTML(), {
   transparent: true,
   clickThrough: true,
   followCursor: true,
-  cursorOffset: { x: 18, y: -24 },
+  cursorOffset: { x: 10, y: -4 },
 });
 
 win.on('ready', (info) => {
