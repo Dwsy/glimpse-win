@@ -1,6 +1,6 @@
 {
   "name": "glimpseui",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Native macOS micro-UI for scripts and agents — sub-50ms WKWebView windows with bidirectional JSON communication",
   "type": "module",
   "main": "src/glimpse.mjs",
@@ -23,7 +23,7 @@
     "bin/glimpse.mjs",
     "pi-extension/index.ts",
     "pi-extension/companion.mjs",
-    "SKILL.md",
+    "skills/glimpse/SKILL.md",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -32,7 +32,7 @@
       "./pi-extension/index.ts"
     ],
     "skills": [
-      "."
+      "./skills"
     ]
   },
   "engines": {

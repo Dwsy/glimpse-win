@@ -116,7 +116,7 @@ test.mjs            — Integration test
 scripts/publish.sh  — npm publish with preflight checks
 package.json        — NPM config, build/postinstall scripts, pi package manifest
 README.md           — User-facing docs (API, protocol, CLI)
-SKILL.md            — Agent skill (patterns, examples, creative ideas)
+skills/glimpse/SKILL.md — Agent skill (patterns, examples, creative ideas)
 CHANGELOG.md        — Release notes
 AGENTS.md           — This file (project conventions for agents)
 .gitignore          — Excludes compiled binary, node_modules

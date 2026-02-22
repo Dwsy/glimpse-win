@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+Fix pi package skill discovery errors when installing via `pi install npm:glimpseui`.
+
+- **Fix**: Move `SKILL.md` to `skills/glimpse/` so parent directory matches skill name
+- **Fix**: Change `pi.skills` path from `"."` to `"./skills"` — prevents CHANGELOG.md and README.md from being picked up as skills
+
 ## 0.3.0
 
 Ship as a unified pi package — `npm install glimpseui` works standalone, `pi install npm:glimpseui` installs the companion extension and skill automatically. No separate extension setup needed.
