@@ -17,9 +17,12 @@ const IDLE_EXIT_POLLS     = 15;    // 15 × 200ms = 3s idle → exit
 const STATUS_COLOR = {
   thinking:  '#F59E0B',
   reading:   '#3B82F6',
-  editing:   '#10B981',
+  editing:   '#FACC15',
   running:   '#F97316',
   searching: '#8B5CF6',
+  done:      '#22C55E',
+  error:     '#EF4444',
+  starting:  '#22C55E',
 };
 
 const STATUS_LABEL = {
@@ -28,6 +31,8 @@ const STATUS_LABEL = {
   editing:   'Editing',
   running:   'Running',
   searching: 'Searching',
+  done:      'Done',
+  error:     'Error',
 };
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
@@ -52,6 +57,7 @@ function buildInitialHTML() {
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -59,32 +65,24 @@ body {
   background: transparent !important;
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 11px;
+  font-weight: 600;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-optical-sizing: auto;
+  -webkit-text-size-adjust: 100%;
   overflow: hidden;
 }
 
 #pill {
   display: inline-block;
-  max-width: 300px;
   overflow: hidden;
   padding: 2px 0;
-  text-shadow:
-    -1px -1px 0 rgba(0,0,0,1),
-     1px -1px 0 rgba(0,0,0,1),
-    -1px  1px 0 rgba(0,0,0,1),
-     1px  1px 0 rgba(0,0,0,1),
-     0    0  6px rgba(0,0,0,0.9),
-     0    0 12px rgba(0,0,0,0.5);
+  -webkit-text-stroke: 3px rgba(0,0,0,1);
+  paint-order: stroke fill;
 }
 
 #pill.light {
-  text-shadow:
-    -1px -1px 0 rgba(255,255,255,1),
-     1px -1px 0 rgba(255,255,255,1),
-    -1px  1px 0 rgba(255,255,255,1),
-     1px  1px 0 rgba(255,255,255,1),
-     0    0  6px rgba(255,255,255,0.9),
-     0    0 12px rgba(255,255,255,0.5);
+  -webkit-text-stroke: 3px rgba(255,255,255,1);
 }
 
 .row {
@@ -125,21 +123,22 @@ body {
   color: rgba(255, 255, 255, 0.7);
   font-family: ui-monospace, 'SF Mono', monospace;
   font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
-  min-width: 0;
 }
 #pill.light .detail { color: rgba(0, 0, 0, 0.6); }
 
-.cursor-blink {
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 300;
-  animation: blink 0.8s step-end infinite;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-#pill.light .cursor-blink { color: rgba(0, 0, 0, 0.5); }
-@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+.fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+.fade-in-slow {
+  animation: fadeIn 0.4s ease-out forwards;
+}
 </style>
 </head>
 <body>
@@ -160,43 +159,65 @@ body {
     if (_light) pill.classList.add('light');
   }
 
+  function playOutro() {
+    var pill = document.getElementById('pill');
+    if (!pill.innerHTML) return;
+    pill.style.transition = 'opacity 0.8s ease-out';
+    pill.style.opacity = '0';
+    setTimeout(function() {
+      pill.innerHTML = '';
+      pill.style.transition = 'none';
+      pill.style.opacity = '1';
+    }, 850);
+  }
+
+  function playStart(project) {
+    if (_introPlaying) return;
+    _introPlaying = true;
+    var pill = document.getElementById('pill');
+    var text = project || 'pi';
+
+    pill.style.opacity = '1';
+    pill.style.transition = 'none';
+    pill.innerHTML =
+      '<div class="row fade-in">' +
+      '  <div class="dot" style="background:#22C55E"></div>' +
+      '  <span class="project">' + text + '</span>' +
+      '</div>';
+    if (_light) pill.classList.add('light');
+
+    // Hand off to live status after animation completes
+    setTimeout(function() {
+      _introPlaying = false;
+    }, 500);
+  }
+
   function playIntro(project) {
     if (_introPlaying) return;
     _introPlaying = true;
     var pill = document.getElementById('pill');
-    var text = project || 'glimpse';
-    var i = 0;
+    var text = project || 'pi';
 
     pill.style.opacity = '1';
     pill.style.transition = 'none';
+    pill.innerHTML =
+      '<div class="row fade-in-slow">' +
+      '  <div class="dot" style="background:#22C55E"></div>' +
+      '  <span class="project">' + text + '</span>' +
+      '</div>';
+    if (_light) pill.classList.add('light');
 
-    function type() {
-      i++;
-      var partial = text.slice(0, i);
-      pill.innerHTML =
-        '<div class="row intro-row">' +
-        '  <span class="project">' + partial + '</span>' +
-        '  <span class="cursor-blink">|</span>' +
-        '</div>';
-      if (_light) pill.classList.add('light');
-      if (i < text.length) {
-        setTimeout(type, 60 + Math.random() * 40);
-      } else {
-        // Hold for a moment, then fade out
-        setTimeout(function() {
-          pill.style.transition = 'opacity 0.6s ease-out';
-          pill.style.opacity = '0';
-          setTimeout(function() {
-            pill.innerHTML = '';
-            pill.style.transition = 'none';
-            pill.style.opacity = '1';
-            _introPlaying = false;
-          }, 650);
-        }, 800);
-      }
-    }
-
-    type();
+    // Hold after reveal, then fade out
+    setTimeout(function() {
+      pill.style.transition = 'opacity 0.6s ease-out';
+      pill.style.opacity = '0';
+      setTimeout(function() {
+        pill.innerHTML = '';
+        pill.style.transition = 'none';
+        pill.style.opacity = '1';
+        _introPlaying = false;
+      }, 650);
+    }, 1200);
   }
 </script>
 </body>
@@ -212,6 +233,16 @@ function buildRowsHTML(agents) {
     const label  = STATUS_LABEL[a.status]  ?? a.status;
     const detail = truncate(a.detail ?? '', 30);
     const proj   = esc(a.project ?? 'pi');
+
+    // "starting" shows just green dot + project name, no status label
+    if (a.status === 'starting') {
+      return [
+        '<div class="row">',
+        `  <div class="dot" style="background:${color}"></div>`,
+        `  <span class="project">${proj}</span>`,
+        '</div>',
+      ].join('\n');
+    }
 
     return [
       '<div class="row">',
@@ -286,8 +317,10 @@ process.on('exit', cleanup);
 
 // ── poll loop ─────────────────────────────────────────────────────────────────
 
-// Track which session IDs have already played their intro
+// Track which session IDs have already played their intro/outro
 const introPlayed = new Set();
+const outroPlayed = new Set();
+const doneHidden = new Set();
 
 function poll() {
   const agents = readAgents();
@@ -296,12 +329,33 @@ function poll() {
   for (const a of agents) {
     if (a.status === 'intro' && !introPlayed.has(a.id)) {
       introPlayed.add(a.id);
-      win.send(`playIntro(${JSON.stringify(a.project ?? 'glimpse')})`);
+      win.send(`playIntro(${JSON.stringify(a.project ?? 'pi')})`);
     }
   }
 
-  // Filter out intro agents from normal rendering
-  const visible = agents.filter(a => a.status !== 'intro');
+  // Trigger start animation for agents beginning work
+  for (const a of agents) {
+    if (a.status === 'starting') {
+      win.send(`playStart(${JSON.stringify(a.project ?? 'pi')})`);
+    }
+  }
+
+  // Schedule fade-out for done agents after 5s
+  for (const a of agents) {
+    if (a.status === 'done' && !outroPlayed.has(a.id)) {
+      outroPlayed.add(a.id);
+      setTimeout(() => {
+        doneHidden.add(a.id);
+        win.send('playOutro()');
+      }, 5000);
+    }
+  }
+
+  // Filter out animated agents from normal rendering
+  const visible = agents.filter(a =>
+    a.status !== 'intro' &&
+    !doneHidden.has(a.id)
+  );
 
   if (visible.length === 0) {
     // Still count intro-only agents as alive (don't auto-exit during intro)
@@ -334,14 +388,14 @@ function poll() {
 // ── open window ───────────────────────────────────────────────────────────────
 
 win = open(buildInitialHTML(), {
-  width:       280,
-  height:      30,
+  width:       1000,
+  height:      120,
   frameless:   true,
   floating:    true,
   transparent: true,
   clickThrough: true,
   followCursor: true,
-  cursorOffset: { x: 10, y: -4 },
+  cursorOffset: { x: 10, y: -89 },
 });
 
 win.on('ready', (info) => {
