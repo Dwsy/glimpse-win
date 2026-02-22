@@ -113,4 +113,8 @@ README.md           — User-facing docs (API, protocol, CLI)
 SKILL.md            — Agent skill (patterns, examples, creative ideas)
 AGENTS.md           — This file (project conventions for agents)
 .gitignore          — Excludes compiled binary, node_modules
+pi-extension/               — Pi companion extension (cursor-following agent status)
+pi-extension/index.ts       — Extension entry point (/companion command, event tracking)
+pi-extension/companion.mjs  — Standalone companion process (Glimpse window, state polling)
+pi-extension/package.json   — Extension dependencies (glimpseui)
 ```

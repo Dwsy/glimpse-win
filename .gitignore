@@ -3,6 +3,7 @@ src/glimpse
 
 # Dependencies
 node_modules/
+pi-extension/node_modules/
 
 # macOS
 .DS_Store
