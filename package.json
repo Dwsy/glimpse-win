@@ -1,6 +1,6 @@
 {
   "name": "glimpseui",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Native macOS micro-UI for scripts and agents — sub-50ms WKWebView windows with bidirectional JSON communication",
   "type": "module",
   "main": "src/glimpse.mjs",
@@ -58,8 +58,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/hjanuschka/glimpse"
+    "url": "https://github.com/hazat/glimpse"
   },
-  "author": "hjanuschka",
+  "author": "hazat",
   "license": "MIT"
 }

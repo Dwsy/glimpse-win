@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4
+
+- **Chore**: Update repository URL and author in package.json
+
 ## 0.3.3
 
 - **Docs**: Add `pi install npm:glimpseui` instructions and `/companion` command to README
