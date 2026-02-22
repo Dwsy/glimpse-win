@@ -201,6 +201,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     var webView: WKWebView!
     let config: Config
 
+    // Cursor anchor — mutable so the follow-cursor protocol command can update it at runtime
+    var cursorAnchor: String? = nil
+
     // Mouse monitor references for follow-cursor mode
     var globalMouseMonitor: Any?
     var localMouseMonitor: Any?
@@ -210,6 +213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        cursorAnchor = config.cursorAnchor
         setupWindow()
         setupWebView()
         if config.followCursor {
@@ -247,9 +251,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         }
         if config.followCursor {
             let mouse = NSEvent.mouseLocation
-            let x = mouse.x + CGFloat(config.cursorOffsetX)
-            let y = mouse.y + CGFloat(config.cursorOffsetY)
-            window.setFrameOrigin(NSPoint(x: x, y: y))
+            if let anchor = cursorAnchor,
+               let base = anchorPosition(mouse: mouse, windowSize: NSSize(width: config.width, height: config.height), anchor: anchor) {
+                let x = base.x + CGFloat(config.cursorOffsetX)
+                let y = base.y + CGFloat(config.cursorOffsetY)
+                window.setFrameOrigin(NSPoint(x: x, y: y))
+            } else {
+                let x = mouse.x + CGFloat(config.cursorOffsetX)
+                let y = mouse.y + CGFloat(config.cursorOffsetY)
+                window.setFrameOrigin(NSPoint(x: x, y: y))
+            }
         } else if let x = config.x, let y = config.y {
             window.setFrameOrigin(NSPoint(x: x, y: y))
         } else {
@@ -305,9 +316,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         let moveHandler: (NSEvent) -> Void = { [weak self] _ in
             guard let self else { return }
             let mouse = NSEvent.mouseLocation
-            let x = mouse.x + CGFloat(self.config.cursorOffsetX)
-            let y = mouse.y + CGFloat(self.config.cursorOffsetY)
-            self.window.setFrameOrigin(NSPoint(x: x, y: y))
+            if let anchor = self.cursorAnchor,
+               let base = anchorPosition(mouse: mouse, windowSize: self.window.frame.size, anchor: anchor) {
+                let x = base.x + CGFloat(self.config.cursorOffsetX)
+                let y = base.y + CGFloat(self.config.cursorOffsetY)
+                self.window.setFrameOrigin(NSPoint(x: x, y: y))
+            } else {
+                let x = mouse.x + CGFloat(self.config.cursorOffsetX)
+                let y = mouse.y + CGFloat(self.config.cursorOffsetY)
+                self.window.setFrameOrigin(NSPoint(x: x, y: y))
+            }
         }
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged],
@@ -316,9 +334,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] event in
             guard let self else { return event }
             let mouse = NSEvent.mouseLocation
-            let x = mouse.x + CGFloat(self.config.cursorOffsetX)
-            let y = mouse.y + CGFloat(self.config.cursorOffsetY)
-            self.window.setFrameOrigin(NSPoint(x: x, y: y))
+            if let anchor = self.cursorAnchor,
+               let base = anchorPosition(mouse: mouse, windowSize: self.window.frame.size, anchor: anchor) {
+                let x = base.x + CGFloat(self.config.cursorOffsetX)
+                let y = base.y + CGFloat(self.config.cursorOffsetY)
+                self.window.setFrameOrigin(NSPoint(x: x, y: y))
+            } else {
+                let x = mouse.x + CGFloat(self.config.cursorOffsetX)
+                let y = mouse.y + CGFloat(self.config.cursorOffsetY)
+                self.window.setFrameOrigin(NSPoint(x: x, y: y))
+            }
             return event
         }
     }
@@ -384,6 +409,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
             webView.evaluateJavaScript(js, completionHandler: nil)
         case "follow-cursor":
             let enabled = json["enabled"] as? Bool ?? true
+            if let anchor = json["anchor"] as? String {
+                cursorAnchor = anchor
+            }
             if enabled {
                 startFollowingCursor()
             } else {
