@@ -86,7 +86,6 @@ export default function (pi: ExtensionAPI) {
 
       if (enabled) {
         mkdirSync(STATE_DIR, { recursive: true });
-        writeState("idle");
         ensureCompanion();
 
         const styledG = ctx.ui.theme.fg("accent", "G");
@@ -104,12 +103,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("agent_start", async (_event, _ctx) => {
     if (!enabled) return;
+    ensureCompanion();
     writeState("thinking");
   });
 
   pi.on("agent_end", async (_event, _ctx) => {
     if (!enabled) return;
-    writeState("idle");
+    deleteState();
   });
 
   pi.on("message_update", async (_event, _ctx) => {

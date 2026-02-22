@@ -20,7 +20,6 @@ const STATUS_COLOR = {
   editing:   '#10B981',
   running:   '#F97316',
   searching: '#8B5CF6',
-  idle:      '#6B7280',
 };
 
 const STATUS_LABEL = {
@@ -29,7 +28,6 @@ const STATUS_LABEL = {
   editing:   'Editing',
   running:   'Running',
   searching: 'Searching',
-  idle:      'Idle',
 };
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
@@ -155,7 +153,7 @@ function buildRowsHTML(agents) {
   if (agents.length === 0) return '';
 
   return agents.map(a => {
-    const color  = STATUS_COLOR[a.status]  ?? STATUS_COLOR.idle;
+    const color  = STATUS_COLOR[a.status]  ?? '#6B7280';
     const label  = STATUS_LABEL[a.status]  ?? a.status;
     const detail = truncate(a.detail ?? '', 30);
     const proj   = esc(a.project ?? 'pi');
