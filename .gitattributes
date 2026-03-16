@@ -1,0 +1,42 @@
+# Auto-detect text files, normalize to LF on commit
+* text=auto eol=lf
+
+# Source code - always LF
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.swift text eol=lf
+*.cs text eol=lf
+*.vala text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+
+# Shell scripts - always LF
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Config files - always LF
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.xml text eol=lf
+*.config text eol=lf
+
+# Documentation - always LF
+*.md text eol=lf
+*.txt text eol=lf
+
+# Build artifacts - binary (no conversion)
+*.exe binary
+*.dll binary
+*.dylib binary
+*.so binary
+*.pdb binary
+*.bin binary
+
+# Lock files - binary (preserve exact format)
+*.lock binary
+bun.lockb binary

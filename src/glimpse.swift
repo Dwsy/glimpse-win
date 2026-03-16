@@ -12,10 +12,6 @@ func writeToStdout(_ dict: [String: Any]) {
     fflush(stdout)
 }
 
-func log(_ message: String) {
-    fputs("[glimpse] \(message)\n", stderr)
-}
-
 // MARK: - System Info
 
 func getSystemInfo() -> [String: Any] {
@@ -504,7 +500,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let type = json["type"] as? String
                 else {
-                    log("Skipping invalid JSON: \(trimmed)")
                     continue
                 }
                 DispatchQueue.main.async {
@@ -531,13 +526,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                   let htmlData = Data(base64Encoded: base64),
                   let html = String(data: htmlData, encoding: .utf8)
             else {
-                log("html command: missing or invalid base64 payload")
                 return
             }
             webView.loadHTMLString(html, baseURL: nil)
         case "eval":
             guard let js = json["js"] as? String else {
-                log("eval command: missing js field")
                 return
             }
             webView.evaluateJavaScript(js, completionHandler: nil)
@@ -586,12 +579,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
             }
         case "file":
             guard let path = json["path"] as? String else {
-                log("file command: missing path field")
                 return
             }
             let fileURL = URL(fileURLWithPath: path)
             guard FileManager.default.fileExists(atPath: path) else {
-                log("file command: file not found: \(path)")
                 return
             }
             webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
@@ -616,7 +607,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         case "close":
             closeAndExit()
         default:
-            log("Unknown command type: \(type)")
+            // Unknown command type
         }
     }
 
@@ -654,7 +645,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                   let data = body.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else {
-                log("Received invalid message from webview")
                 return
             }
 

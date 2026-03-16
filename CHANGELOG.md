@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Feature**: Add Windows native host MVP using `.NET 8 + WebView2`
+- **Feature**: Add cross-platform host selection in `src/glimpse.mjs`
+- **Feature**: Add cross-platform companion IPC path handling with Windows named pipes
+- **Feature**: Add `npm run build:windows`, `npm run test:platform`, and `npm run demo:windows`
+- **Fix**: Add repo-level `NuGet.config` so Windows restore can resolve `Microsoft.Web.WebView2`
+
 ## 0.3.7
 
 Companion remembers your preference — disable it once and it stays off across sessions.

@@ -4,10 +4,11 @@ import { basename, join } from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { getCompanionSocketPath } from "./socket-path.mjs";
 
-const SOCK = "/tmp/pi-companion.sock";
+const SOCK = getCompanionSocketPath();
 const SESSION_ID = randomUUID().slice(0, 8);
 const COMPANION_PATH = join(
   fileURLToPath(new URL(".", import.meta.url)),
@@ -41,8 +42,6 @@ export default function (pi: ExtensionAPI) {
   let lastStatus = "";
   let lastCtx: any = null;
   const project = basename(process.cwd());
-
-  // ── socket helpers ────────────────────────────────────────────────────────
 
   function send(status: string, detail?: string) {
     lastStatus = status;
@@ -81,18 +80,16 @@ export default function (pi: ExtensionAPI) {
   async function ensureConnected() {
     if (sock && !sock.destroyed) return;
 
-    // Try connecting to existing companion
     await connectToCompanion();
     if (sock) return;
 
-    // Spawn companion and retry
-    const child = spawn("node", [COMPANION_PATH], {
+    const child = spawn(process.execPath, [COMPANION_PATH], {
       detached: true,
       stdio: "ignore",
+      windowsHide: process.platform === "win32",
     });
     child.unref();
 
-    // Wait for socket to be available
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100));
       await connectToCompanion();
@@ -108,8 +105,6 @@ export default function (pi: ExtensionAPI) {
     sock = null;
     lastStatus = "";
   }
-
-  // ── enable / disable ──────────────────────────────────────────────────────
 
   async function enable(ctx: any) {
     enabled = true;
@@ -129,15 +124,11 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("companion", undefined);
   }
 
-  // ── session start ─────────────────────────────────────────────────────────
-
   pi.on("session_start", async (_event, ctx) => {
     if (enabled) {
       await enable(ctx);
     }
   });
-
-  // ── /companion command ────────────────────────────────────────────────────
 
   pi.registerCommand("companion", {
     description: "Toggle cursor companion (shows agent activity near cursor)",
@@ -151,8 +142,6 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
-
-  // ── event handlers ────────────────────────────────────────────────────────
 
   pi.on("agent_start", async (_event, ctx) => {
     if (!enabled) return;
@@ -211,7 +200,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("session_shutdown", async (_event, _ctx) => {
+  pi.on("session_shutdown", async () => {
     disconnect();
   });
 }

@@ -4,6 +4,13 @@ src/glimpse
 # Dependencies
 node_modules/
 
+# Native build output
+native/windows/bin/
+native/windows/obj/
+
 # macOS
 .DS_Store
 review.md
+
+# Documentation
+docs/

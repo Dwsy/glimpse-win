@@ -1,15 +1,24 @@
 # Glimpse
 
-Native macOS micro-UI for scripts and agents.
+Native micro-UI for scripts and agents.
 
 https://github.com/user-attachments/assets/57822cd2-4606-4865-a555-d8ccacd31b40
 
-Glimpse opens a native WKWebView window in under 50ms and speaks a bidirectional JSON Lines protocol over stdin/stdout. No Electron, no browser, no runtime dependencies — just a tiny Swift binary and a Node.js wrapper.
+Glimpse opens a native system WebView window and speaks a bidirectional JSON Lines protocol over stdin/stdout. On macOS it uses Swift + WKWebView. On Windows it uses .NET + WebView2.
 
 ## Requirements
 
+### macOS
+
 - macOS (any recent version)
 - Xcode Command Line Tools: `xcode-select --install`
+- Node.js 18+
+
+### Windows
+
+- Windows 10/11
+- .NET 8 SDK
+- Microsoft Edge WebView2 Runtime
 - Node.js 18+
 
 ## Install
@@ -18,7 +27,7 @@ Glimpse opens a native WKWebView window in under 50ms and speaks a bidirectional
 npm install glimpseui
 ```
 
-`npm install` automatically compiles the Swift binary via a `postinstall` hook (~2 seconds). See [Compile on Install](#compile-on-install) for details.
+`npm install` automatically compiles the native host via a `postinstall` hook. On macOS it builds the Swift binary; on Windows it publishes the .NET/WebView2 host. See [Compile on Install](#compile-on-install) for details.
 
 ### Pi Agent Package
 
@@ -31,8 +40,15 @@ Installs the Glimpse skill and companion extension for [pi](https://github.com/m
 **Manual build:**
 ```bash
 npm run build
-# or directly:
-swiftc src/glimpse.swift -o src/glimpse
+npm run build:macos
+npm run build:windows
+```
+
+**Visible Windows demos:**
+```bash
+npm run demo:windows     # basic visible window
+npm run demo:html        # HTML interaction + Node round-trip
+npm run demo:companion   # cursor-follow companion overlay
 ```
 
 ## Quick Start
@@ -123,7 +139,7 @@ Instead of raw pixel offsets, use `cursorAnchor` to position the window at one o
   bottom-left  bottom-right
 ```
 
-A fixed **safe zone** is automatically applied so the window never overlaps the cursor graphic (accounts for the largest macOS system cursors plus 8pt padding). `cursorOffset` can still be used on top of an anchor as a fine-tuning adjustment.
+A fixed **safe zone** is automatically applied so the window never overlaps the cursor graphic (accounts for large system cursors plus 8px padding). `cursorOffset` can still be used on top of an anchor as a fine-tuning adjustment.
 
 ```js
 // Window snaps to the right of the cursor with a safe gap
@@ -393,7 +409,13 @@ HTML=$(echo '<html><body><h1>Hi</h1></body></html>' | base64)
 {
   echo "{\"type\":\"html\",\"html\":\"$HTML\"}"
   cat  # keep stdin open so the window stays up
-} | ./src/glimpse --width 600 --height 400
+} | glimpseui --width 600 --height 400
+```
+
+**Windows PowerShell example:**
+```powershell
+$html = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('<html><body><h1>Hi</h1></body></html>'))
+"{""type"":""html"",""html"":""$html""}" | glimpseui --width 600 --height 400
 ```
 
 **Python example:**
@@ -402,7 +424,7 @@ import subprocess, base64, json
 
 html = b"<html><body><h1>Hello from Python</h1></body></html>"
 proc = subprocess.Popen(
-    ["./src/glimpse", "--width", "500", "--height", "400"],
+    ["glimpseui", "--width", "500", "--height", "400"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE
 )
 
@@ -422,49 +444,54 @@ for line in proc.stdout:
 
 ## Compile on Install
 
-Every Mac ships with `swiftc` once Xcode Command Line Tools are installed — no Xcode IDE required. Glimpse takes advantage of this: running `npm install` triggers a `postinstall` script that compiles `src/glimpse.swift` into a native binary in about 2 seconds.
+`npm install` runs a platform-aware `postinstall` build:
 
-```
-> glimpse@0.1.0 postinstall
-> npm run build
+- **macOS**: compiles `src/glimpse.swift` with `swiftc`
+- **Windows**: publishes `native/windows/Glimpse.Windows.csproj` with `.NET 8 + WebView2`
 
-swiftc src/glimpse.swift -o src/glimpse  ✓
-```
+Examples:
 
-**If compilation fails**, the most common cause is missing Xcode CLT:
-```bash
-xcode-select --install
-```
-
-To recompile manually at any time:
 ```bash
 npm run build
+npm run build:macos
+npm run build:windows
 ```
+
+If the native build is skipped or fails:
+
+- **macOS**: install Xcode Command Line Tools via `xcode-select --install`
+- **Windows**: install `.NET 8 SDK` and `Microsoft Edge WebView2 Runtime`
 
 ## Performance
 
-End-to-end benchmarks measuring the full round-trip: spawn process → open native window → render HTML → JavaScript executes → response back to Node.js. Measured on Apple Silicon (M-series Mac).
+The original project benchmarked warm and cold start on Apple Silicon macOS. Windows performance work is now functional but has not yet been benchmarked with the same methodology.
 
-### Warm Start (binary pre-compiled)
-
-This is the typical case — the binary is compiled once at install time.
-
-| Run | Time |
-|-----|------|
-| 1st after idle | ~630ms |
-| Subsequent (median of 5) | **~310ms** |
-
-The first invocation after a period of inactivity is slower (~630ms) as macOS loads system frameworks (Cocoa, WebKit) into memory. Subsequent runs settle at **~310ms** — that's spawn, window server, WebKit initialization, HTML render, JS eval, and JSON response over stdout, all in a third of a second.
-
-### Cold Start (compile from source + run)
+### macOS reference numbers
 
 | Phase | Time |
 |-------|------|
-| `swiftc -O` compilation | ~1,600ms |
-| Window round-trip | ~350ms |
-| **Total** | **~2,000ms** |
+| Warm start (subsequent median) | ~310ms |
+| Cold compile + run | ~2,000ms |
 
-Cold start only happens once — during `npm install` (via `postinstall`) or a manual `npm run build`. After that, it's always a warm start.
+### Windows status
+
+- Core window open / ready / eval / message / close flow is working
+- Manual HTML interaction demo is working
+- Companion-style cursor-follow demo is working
+- Performance benchmarks are still pending
+
+## License
+
+MIT
+| ~310ms |
+| Cold compile + run | ~2,000ms |
+
+### Windows status
+
+- Core window open / ready / eval / message / close flow is working
+- Manual HTML interaction demo is working
+- Companion-style cursor-follow demo is working
+- Performance benchmarks are still pending
 
 ## License
 

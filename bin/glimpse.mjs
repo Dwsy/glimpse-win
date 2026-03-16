@@ -19,6 +19,7 @@ for (let i = 0; i < args.length; i++) {
   else if (arg === '--click-through') { flags.clickThrough = true; }
   else if (arg === '--follow-cursor') { flags.followCursor = true; }
   else if (arg === '--auto-close') { flags.autoClose = true; }
+  else if (arg === '--hidden') { flags.hidden = true; }
   else if (arg === '--width' && args[i + 1]) { flags.width = parseInt(args[++i]); }
   else if (arg === '--height' && args[i + 1]) { flags.height = parseInt(args[++i]); }
   else if (arg === '--title' && args[i + 1]) { flags.title = args[++i]; }
@@ -29,17 +30,17 @@ for (let i = 0; i < args.length; i++) {
   else if (arg === '--cursor-anchor' && args[i + 1]) { flags.cursorAnchor = args[++i]; }
   else if (arg === '--follow-mode' && args[i + 1]) { flags.followMode = args[++i]; }
   else if (!arg.startsWith('-')) { positional.push(arg); }
-  else { console.error(`Unknown flag: ${arg}`); process.exit(1); }
+  else { process.exit(1); }
 }
 
 if (flags.help) {
   console.log(`
-glimpseui — Native macOS micro-UI for scripts and agents
+glimpseui — Native micro-UI for scripts and agents
 
 Usage:
   glimpseui [options] [file.html]    Open an HTML file
   echo '<h1>Hi</h1>' | glimpseui    Pipe HTML from stdin
-  glimpseui --demo                   Show a demo window
+  glimpseui --demo                   Show a visible demo window
 
 Options:
   --width <n>          Window width (default: 800)
@@ -55,16 +56,17 @@ Options:
   --cursor-offset-x <n>  Cursor X offset (default: 20)
   --cursor-offset-y <n>  Cursor Y offset (default: -20)
   --auto-close         Close after first window.glimpse.send()
+  --hidden             Start hidden, then reveal later via protocol/API
   --x <n>              Window X position
   --y <n>              Window Y position
-  --demo               Show a demo window
+  --demo               Show a visible demo window
   --help, -h           Show this help
 `);
   process.exit(0);
 }
 
 const DEMO_HTML = `
-<body style="margin: 0; font-family: system-ui; background: transparent !important;">
+<body style="margin: 0; font-family: system-ui; background: linear-gradient(135deg, #141423, #1c2540) !important;">
   <style>
     .container {
       padding: 32px; height: 100vh; box-sizing: border-box;
@@ -92,7 +94,7 @@ const DEMO_HTML = `
   </style>
   <div class="container">
     <h1>👁️ <span>Glimpse</span></h1>
-    <p>Native macOS micro-UI. Sub-50ms windows with WKWebView.<br>
+    <p>Native micro-UI for macOS and Windows.<br>
        Bidirectional communication via <code>window.glimpse.send()</code></p>
     <div class="features">
       <span class="tag">Frameless</span>
@@ -119,15 +121,21 @@ async function main() {
 
   if (flags.demo) {
     html = DEMO_HTML;
-    flags.frameless = flags.frameless ?? true;
-    flags.transparent = flags.transparent ?? true;
-    flags.width = flags.width ?? 380;
-    flags.height = flags.height ?? 320;
+    if (process.platform === 'win32') {
+      flags.frameless = flags.frameless ?? false;
+      flags.transparent = flags.transparent ?? false;
+      flags.width = flags.width ?? 420;
+      flags.height = flags.height ?? 340;
+    } else {
+      flags.frameless = flags.frameless ?? true;
+      flags.transparent = flags.transparent ?? true;
+      flags.width = flags.width ?? 380;
+      flags.height = flags.height ?? 320;
+    }
   } else if (positional.length > 0) {
     // Load from file
     const file = resolve(positional[0]);
     if (!existsSync(file)) {
-      console.error(`File not found: ${file}`);
       process.exit(1);
     }
     html = readFileSync(file, 'utf-8');
@@ -139,19 +147,12 @@ async function main() {
     }
     html = Buffer.concat(chunks).toString('utf-8');
   } else {
-    console.error('Usage: glimpseui [options] [file.html]');
-    console.error('       echo "<h1>Hi</h1>" | glimpseui');
-    console.error('       glimpseui --demo');
-    console.error('');
-    console.error('Run glimpseui --help for all options.');
     process.exit(1);
   }
 
   const win = open(html, flags);
 
-  win.on('message', data => {
-    console.log(JSON.stringify(data));
-  });
+  win.on('message', () => {});
 
   win.on('closed', () => {
     process.exit(0);
@@ -159,6 +160,5 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(err.message);
   process.exit(1);
 });

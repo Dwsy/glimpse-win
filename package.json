@@ -1,7 +1,7 @@
 {
   "name": "glimpseui",
   "version": "0.3.7",
-  "description": "Native macOS micro-UI for scripts and agents — sub-50ms WKWebView windows with bidirectional JSON communication",
+  "description": "Native micro-UI for scripts and agents with platform-specific hosts",
   "type": "module",
   "main": "src/glimpse.mjs",
   "exports": {
@@ -11,9 +11,15 @@
     "glimpseui": "bin/glimpse.mjs"
   },
   "scripts": {
-    "build": "swiftc -O src/glimpse.swift -o src/glimpse",
-    "postinstall": "npm run build",
+    "build": "node scripts/build.mjs",
+    "build:macos": "node scripts/build.mjs darwin",
+    "build:windows": "node scripts/build.mjs win32",
+    "postinstall": "node scripts/postinstall.mjs",
     "test": "node test/test.mjs",
+    "test:platform": "node test/platform.mjs",
+    "demo:windows": "node scripts/demo-windows.mjs",
+    "demo:companion": "node scripts/demo-companion.mjs",
+    "demo:html": "node scripts/demo-html-interaction.mjs",
     "publish:check": "./scripts/publish.sh --dry-run",
     "publish:npm": "./scripts/publish.sh"
   },
@@ -21,8 +27,18 @@
     "src/glimpse.swift",
     "src/glimpse.mjs",
     "bin/glimpse.mjs",
+    "NuGet.config",
+    "native/windows/Glimpse.Windows.csproj",
+    "native/windows/Program.cs",
+    "scripts/build.mjs",
+    "scripts/postinstall.mjs",
+    "scripts/demo-windows.mjs",
+    "scripts/demo-companion.mjs",
+    "scripts/demo-html-interaction.mjs",
+    "scripts/demo/",
     "pi-extension/index.ts",
     "pi-extension/companion.mjs",
+    "pi-extension/socket-path.mjs",
     "skills/glimpse/SKILL.md",
     "README.md",
     "CHANGELOG.md"
@@ -39,15 +55,18 @@
     "node": ">=18"
   },
   "os": [
-    "darwin"
+    "darwin",
+    "win32"
   ],
   "keywords": [
     "macos",
+    "windows",
     "webview",
     "native",
     "ui",
     "webkit",
     "wkwebview",
+    "webview2",
     "swift",
     "gui",
     "agent",

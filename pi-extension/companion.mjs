@@ -2,10 +2,9 @@ import { open } from '../src/glimpse.mjs';
 import { createServer } from 'node:net';
 import { createInterface } from 'node:readline';
 import { unlinkSync } from 'node:fs';
+import { getCompanionSocketPath, usesNamedPipe } from './socket-path.mjs';
 
-const SOCK = '/tmp/pi-companion.sock';
-
-// ── status config ─────────────────────────────────────────────────────────────
+const SOCK = getCompanionSocketPath();
 
 const STATUS_COLOR = {
   starting:  '#22C55E',
@@ -27,8 +26,6 @@ const STATUS_LABEL = {
   done:      'Done',
   error:     'Error',
 };
-
-// ── HTML ──────────────────────────────────────────────────────────────────────
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -63,12 +60,12 @@ body {
 }
 #pill {
   width: fit-content;
-  background: rgba(0,0,0,0.45);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: linear-gradient(135deg, rgba(30,30,30,0.9) 0%, rgba(20,20,20,0.7) 100%);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 8px;
   padding: 2px 0;
   transition: opacity 0.3s ease-out;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 .row {
   display: flex;
@@ -184,7 +181,6 @@ function render() {
       html += '<span class="detail">' + esc(r.detail) + '</span>';
     }
     html += '</div>';
-    // Meta row
     var frozen = _frozenElapsed[ids[i]];
     var elapsed = frozen || (_startTimes[ids[i]] ? fmtElapsed(Date.now() - _startTimes[ids[i]]) : '');
     html += '<div class="meta">';
@@ -207,13 +203,11 @@ function render() {
 </html>`;
 }
 
-// ── state ─────────────────────────────────────────────────────────────────────
-
-const agents = new Map(); // id → { project, status, detail }
-const sockets = new Set(); // active client connections
+const agents = new Map();
+const sockets = new Set();
 let win = null;
 let winReady = false;
-let pendingUpdates = []; // buffered calls until window is ready
+let pendingUpdates = [];
 let idleTimer = null;
 
 function resetIdleTimer() {
@@ -225,8 +219,6 @@ function resetIdleTimer() {
     }
   }, 5000);
 }
-
-// ── render ─────────────────────────────────────────────────────────────────────
 
 function pushUpdate(id, data) {
   const color = STATUS_COLOR[data.status] ?? '#6B7280';
@@ -245,10 +237,9 @@ function pushRemove(id) {
   else pendingUpdates.push(js);
 }
 
-// ── socket server ─────────────────────────────────────────────────────────────
-
-// Clean up stale socket
-try { unlinkSync(SOCK); } catch {}
+if (!usesNamedPipe(SOCK)) {
+  try { unlinkSync(SOCK); } catch {}
+}
 
 const server = createServer(socket => {
   sockets.add(socket);
@@ -286,11 +277,7 @@ const server = createServer(socket => {
   socket.on('error', () => {});
 });
 
-server.listen(SOCK, () => {
-  // Socket ready
-});
-
-// ── window ────────────────────────────────────────────────────────────────────
+server.listen(SOCK, () => {});
 
 win = open(buildHTML(), {
   width: 630,
@@ -304,7 +291,7 @@ win = open(buildHTML(), {
   cursorAnchor: 'top-right',
 });
 
-win.on('ready', info => {
+win.on('ready', () => {
   winReady = true;
   for (const js of pendingUpdates) win.send(js);
   pendingUpdates = [];
@@ -314,15 +301,15 @@ win.on('ready', info => {
 win.on('closed', () => { cleanup(); process.exit(0); });
 win.on('error', () => {});
 
-// ── cleanup ───────────────────────────────────────────────────────────────────
-
 let cleanedUp = false;
 function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
   server.close();
-  try { unlinkSync(SOCK); } catch {}
-  if (win) try { win.close(); } catch {};
+  if (!usesNamedPipe(SOCK)) {
+    try { unlinkSync(SOCK); } catch {}
+  }
+  if (win) try { win.close(); } catch {}
 }
 
 process.on('SIGTERM', () => { cleanup(); process.exit(0); });
