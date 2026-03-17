@@ -1,8 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
-- **Feature**: Add `openLinks` / `openLinksApp` support so clicked `http`/`https` links in Glimpse can be opened in the system browser or a specific app path.
+Two community contributions land in this release — thank you! 🎉
+
+### Menu Bar Mode — [@vtemian](https://github.com/vtemian) ([#5](https://github.com/HazAT/glimpse/pull/5))
+
+Glimpse can now live in your menu bar. The new `statusItem()` API creates a menu bar icon with a popover WebView — click the icon to show/hide your HTML content. Comes with `setTitle()` to update the menu bar label and `resize()` to change the popover dimensions on the fly.
+
+```js
+import { statusItem } from 'glimpseui';
+
+const item = statusItem('<h1>Hello from the menu bar</h1>', {
+  title: '👁', width: 300, height: 200
+});
+item.on('click', () => console.log('popover toggled'));
+```
+
+CLI: `glimpse --status-item --title "👁" --width 300 --height 200`
+
+### Open Links Externally — [@joemccann](https://github.com/joemccann) ([#6](https://github.com/HazAT/glimpse/pull/6))
+
+Links clicked inside Glimpse can now open in your system browser (or a specific app) instead of navigating within the WebView. Useful for dashboards, documentation viewers, or any UI where outbound links should escape the window.
+
+```js
+const win = open(html, { openLinks: true });
+// or with a specific browser:
+const win = open(html, { openLinks: true, openLinksApp: '/Applications/Firefox.app' });
+```
+
+CLI: `glimpse --open-links` or `glimpse --open-links-app "/Applications/Google Chrome.app"`
+
+Also adds `GLIMPSE_BINARY_PATH` env var to override the compiled binary location.
 
 ## 0.3.7
 
