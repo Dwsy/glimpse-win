@@ -10,6 +10,7 @@ Glimpse opens a native WebView window and speaks a bidirectional JSON Lines prot
 |----------|---------|--------------|
 | macOS | Swift + WKWebView | Xcode Command Line Tools |
 | Linux | Rust + GTK4 + WebKitGTK | Rust toolchain, GTK4/WebKitGTK dev packages |
+| Linux | Chromium CDP (zero-compile) | Any Chromium-based browser |
 | Windows | .NET 8 + WebView2 | .NET 8 SDK, Edge WebView2 Runtime |
 
 ## Install
@@ -104,7 +105,7 @@ const win = open(`
 
 The window tracks the cursor in real-time across all screens. `followCursor` implies `floating` — the window stays on top automatically.
 
-**Platform support:** Follow cursor works on macOS and Windows. On Linux, it requires Hyprland (via IPC socket). Other Wayland compositors and X11 are not yet supported — `followCursor` will emit a warning and be silently ignored.
+**Platform support:** Follow cursor works on macOS and Windows. On Linux with the native backend, it requires Hyprland (via IPC socket). The Chromium CDP backend also supports X11 (via `xdotool`). Other Wayland compositors without the Chromium backend will emit a warning and silently ignore `followCursor`.
 
 You can also toggle tracking dynamically after the window is open:
 
@@ -515,6 +516,7 @@ for line in proc.stdout:
 |----------|-------------|
 | `GLIMPSE_BINARY_PATH` | Override the native binary path (any platform) |
 | `GLIMPSE_HOST_PATH` | Alias for `GLIMPSE_BINARY_PATH` |
+| `GLIMPSE_BACKEND` | Linux only: `chromium` (force CDP backend) or `native` (force Rust/GTK binary) |
 
 ## Build from Source
 
@@ -527,6 +529,8 @@ npm run build:macos          # or: swiftc -O src/glimpse.swift -o src/glimpse
 
 ### Linux
 
+**Option A: Native backend (Rust + GTK4 + WebKitGTK)**
+
 ```bash
 # Install dependencies (pick your distro)
 # Fedora:  dnf install gtk4-devel webkitgtk6.0-devel gtk4-layer-shell-devel
@@ -536,6 +540,17 @@ npm run build:macos          # or: swiftc -O src/glimpse.swift -o src/glimpse
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # if no Rust toolchain
 npm run build:linux
 ```
+
+**Option B: Chromium CDP backend (zero-compile)**
+
+No build step required — just needs a Chromium-based browser (Chrome, Chromium, Brave, Edge, etc.) installed on the system. If the native binary isn't built, Glimpse automatically falls back to the Chromium backend. You can also force it:
+
+```bash
+GLIMPSE_BACKEND=chromium node my-app.mjs  # force Chromium
+GLIMPSE_BACKEND=native node my-app.mjs    # force native
+```
+
+The Chromium backend supports features the native Linux backend doesn't: follow-cursor on X11, system tray status items, and opening links externally.
 
 ### Windows
 
@@ -549,14 +564,14 @@ npm run build:windows
 
 The core protocol and Node.js API are identical across platforms. Some features are platform-specific:
 
-| Feature | macOS | Linux | Windows |
-|---------|-------|-------|---------|
-| Window modes (frameless, floating, transparent, click-through) | ✅ | ✅ | ✅ |
-| Follow cursor | ✅ | Hyprland only | ✅ |
-| Spring physics (follow mode) | ✅ | ✅ (Hyprland) | ✅ |
-| Status item (menu bar) | ✅ | — | — |
-| Open links externally | ✅ | — | — |
-| Hidden / prewarm | ✅ | ✅ | ✅ |
+| Feature | macOS | Linux (native) | Linux (Chromium CDP) | Windows |
+|---------|-------|----------------|---------------------|---------|
+| Window modes (frameless, floating, transparent, click-through) | ✅ | ✅ | ✅ | ✅ |
+| Follow cursor | ✅ | Hyprland only | Hyprland + X11 | ✅ |
+| Spring physics (follow mode) | ✅ | ✅ (Hyprland) | ✅ | ✅ |
+| Status item (menu bar / tray) | ✅ | — | ✅ | — |
+| Open links externally | ✅ | — | ✅ | — |
+| Hidden / prewarm | ✅ | ✅ | ✅ | ✅ |
 
 ## Performance
 
@@ -575,6 +590,7 @@ Cold start only happens once during `npm install`. After that, it's always warm.
 ```
 src/glimpse.swift              — macOS native binary (Swift/Cocoa/WebKit)
 src/linux/                     — Linux native binary (Rust/GTK4/WebKitGTK)
+src/chromium-backend.mjs       — Linux Chromium CDP backend (zero-compile alternative)
 native/windows/Program.cs      — Windows native binary (.NET 8/WebView2)
 src/glimpse.mjs                — Node.js wrapper (EventEmitter API)
 src/follow-cursor-support.mjs  — Runtime capability detection

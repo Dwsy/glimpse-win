@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.0
+
+Two community contributions expanding Linux support — thank you [@Whamp](https://github.com/Whamp) and [@hjanuschka](https://github.com/hjanuschka)! 🎉
+
+### Chromium CDP Backend for Linux — [@hjanuschka](https://github.com/hjanuschka) ([#8](https://github.com/HazAT/glimpse/pull/8))
+
+A zero-compile alternative to the native WebKitGTK backend. When the Rust binary isn't built, Glimpse automatically falls back to spawning system Chromium via `--remote-debugging-pipe` and speaking CDP over FDs 3/4. A ~1k line Node module (`src/chromium-backend.mjs`) translates between the Glimpse JSON Lines protocol and CDP — callers see no difference.
+
+```bash
+GLIMPSE_BACKEND=chromium node my-app.mjs  # force Chromium
+GLIMPSE_BACKEND=native node my-app.mjs    # force native
+# or just don't build the Rust binary and it kicks in automatically
+```
+
+No Rust toolchain, no GTK dev packages — just a Chromium-based browser installed on the system. This also unlocks capabilities the native Linux backend couldn't provide:
+
+- **Follow cursor on X11** — polls via `xdotool` (plus native Hyprland IPC on Wayland)
+- **Status item / system tray** — lightweight inline Python GTK helper, click toggles the window
+- **Open links externally** — intercepts navigations via CDP Fetch, hands off to `xdg-open`
+- Full window mode support: frameless, transparent, floating, click-through
+
+### Linux CLI Fixes — [@Whamp](https://github.com/Whamp) ([#7](https://github.com/HazAT/glimpse/pull/7))
+
+Two bugs that prevented the Linux native binary from launching correctly:
+
+- **Fix: negative number CLI args** — `--cursor-offset-y -20` was parsed by clap as a flag instead of a value. Switched to `=` syntax (`--cursor-offset-y=-20`) for negative numbers.
+- **Fix: platform-gated options** — `--open-links` and `--open-links-app` were passed on Linux but only implemented for macOS, causing "unexpected argument" errors. These flags are now skipped on non-macOS platforms.
+
 ## 0.5.1
 
 ### Windows Fixes
