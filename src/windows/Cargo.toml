@@ -1,0 +1,31 @@
+[package]
+name = "glimpse-windows"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "glimpse"
+path = "src/main.rs"
+
+[dependencies]
+wry = "0.48"
+tao = "0.32"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_HiDpi",
+] }
+
+[profile.release]
+opt-level = 2
+strip = true

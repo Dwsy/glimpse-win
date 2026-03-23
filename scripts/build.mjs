@@ -17,9 +17,9 @@ function run(command, args, extraOptions = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function hasDotnetSdk() {
-  const result = spawnSync('dotnet', ['--list-sdks'], { encoding: 'utf8' });
-  return !result.error && result.status === 0 && Boolean(result.stdout.trim());
+function hasCargo() {
+  const result = spawnSync('cargo', ['--version'], { encoding: 'utf8' });
+  return !result.error && result.status === 0;
 }
 
 switch (target) {
@@ -51,18 +51,15 @@ switch (target) {
   }
 
   case 'win32': {
-    if (!hasDotnetSdk()) {
-      fail('Missing .NET SDK. Install .NET 8 SDK, then rerun `npm run build:windows`.');
+    if (!hasCargo()) {
+      fail('Rust toolchain not found. Install from https://rustup.rs');
     }
-    const runtime = process.env.GLIMPSE_WINDOWS_RUNTIME || 'win-x64';
-    run('dotnet', [
-      'publish',
-      'native/windows/Glimpse.Windows.csproj',
-      '-c', 'Release',
-      '-r', runtime,
-      '--self-contained', 'false',
-      '-o', 'native/windows/bin',
-    ]);
+    const rustDir = join(__dirname, '..', 'src', 'windows');
+    run('cargo', ['build', '--release'], { cwd: rustDir });
+    const src = join(rustDir, 'target', 'release', 'glimpse.exe');
+    const dest = join(__dirname, '..', 'src', 'glimpse.exe');
+    copyFileSync(src, dest);
+    console.log('Binary installed to src/glimpse.exe');
     break;
   }
 

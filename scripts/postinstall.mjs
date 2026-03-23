@@ -12,9 +12,9 @@ function hasCommand(command, args = ['--version']) {
   return !result.error && result.status === 0;
 }
 
-function hasDotnetSdk() {
-  const result = spawnSync('dotnet', ['--list-sdks'], { encoding: 'utf8' });
-  return !result.error && result.status === 0 && Boolean(result.stdout.trim());
+function hasCargo() {
+  const result = spawnSync('cargo', ['--version'], { encoding: 'utf8' });
+  return !result.error && result.status === 0;
 }
 
 rmSync(skippedBuildMarker, { force: true });
@@ -42,8 +42,8 @@ if (process.platform === 'linux') {
   }
 }
 
-if (process.platform === 'win32' && !hasDotnetSdk()) {
-  const message = 'Postinstall skipped native build because the .NET 8 SDK was not found. Install it, then run npm run build:windows.';
+if (process.platform === 'win32' && !hasCargo()) {
+  const message = 'Postinstall skipped native build because cargo was not found. Install Rust from https://rustup.rs, then run npm run build:windows.';
   writeFileSync(skippedBuildMarker, message + '\n');
   console.warn(`[glimpse] ${message}`);
   process.exit(0);

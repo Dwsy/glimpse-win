@@ -52,9 +52,9 @@ function resolveNativeHost() {
     }
     case 'win32':
       return {
-        path: normalize(join(__dirname, '..', 'native', 'windows', 'bin', 'glimpse.exe')),
+        path: join(__dirname, 'glimpse.exe'),
         platform: 'win32',
-        buildHint: "Run 'npm run build:windows' (requires .NET 8 SDK and WebView2 Runtime)",
+        buildHint: "Run 'npm run build:windows' (requires Rust toolchain and WebView2 Runtime)",
       };
     default:
       throw new Error(`Unsupported platform: ${process.platform}. Glimpse supports macOS, Linux, and Windows.`);

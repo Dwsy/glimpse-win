@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev-win]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Platform tests
+        run: npm run test:platform
+
+      - name: Integration tests (non-Windows)
+        if: matrix.os != 'windows-latest'
+        run: npm test
+
+      - name: Integration tests (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          npm run build:windows
+          npm test

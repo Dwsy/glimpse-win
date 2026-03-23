@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            os: macos-latest
+            artifact: src/glimpse
+          - platform: linux
+            os: ubuntu-latest
+            artifact: src/glimpse
+          - platform: windows
+            os: windows-latest
+            artifact: src/glimpse.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build macOS
+        if: matrix.platform == 'macos'
+        run: npm run build:macos
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: npm run build:linux
+
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        run: npm run build:windows
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: glimpse-${{ matrix.platform }}
+          path: ${{ matrix.artifact }}
+          retention-days: 30
+
+  publish-npm:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare binaries
+        run: |
+          cp artifacts/glimpse-macos/glimpse src/
+          cp artifacts/glimpse-linux/glimpse src/
+          cp artifacts/glimpse-windows/glimpse.exe src/
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

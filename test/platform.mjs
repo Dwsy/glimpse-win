@@ -7,7 +7,7 @@ const socketPath = getCompanionSocketPath();
 
 if (process.platform === 'win32') {
   assert.equal(host.platform, 'win32');
-  assert.match(host.path, /native[\\/]windows[\\/]bin[\\/]glimpse\.exe$/i);
+  assert.match(host.path, /src[\\/]glimpse\.exe$/i);
   assert.equal(usesNamedPipe(socketPath), true);
   assert.equal(socketPath, '\\\\.\\pipe\\pi-companion');
 } else if (process.platform === 'darwin') {

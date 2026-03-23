@@ -1,10 +1,15 @@
 # Compiled binary (do not ignore src/glimpse.swift or src/glimpse.mjs)
 src/glimpse
+src/glimpse.exe
 
 # Linux build output
 src/linux/target/
 
-# Windows build output
+# Windows Rust build output
+src/windows/target/
+src/windows/Cargo.lock
+
+# Legacy .NET build output (kept for reference during transition)
 native/windows/bin/
 native/windows/obj/
 
@@ -19,4 +24,8 @@ node_modules/
 
 # macOS
 .DS_Store
+
+# Editor
 review.md
+*.swp
+*.swo
