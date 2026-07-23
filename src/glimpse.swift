@@ -12,8 +12,40 @@ func writeToStdout(_ dict: [String: Any]) {
     fflush(stdout)
 }
 
+/// Protocol event helper — always attaches window `id` when multi-window host is used.
+func writeEvent(_ dict: [String: Any], id: String? = nil) {
+    var payload = dict
+    if let id { payload["id"] = id }
+    writeToStdout(payload)
+}
+
 func log(_ message: String) {
     fputs("[glimpse] \(message)\n", stderr)
+}
+
+/// Resolve AppIcon next to the binary, inside Glimpse.app, or under ../assets.
+func resolveAppIconURL() -> URL? {
+    let exe = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+    let candidates: [URL] = [
+        // Glimpse.app/Contents/Resources/AppIcon.icns
+        exe.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/AppIcon.icns"),
+        exe.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/AppIcon-1024.png"),
+        // next to binary
+        exe.deletingLastPathComponent().appendingPathComponent("AppIcon.icns"),
+        exe.deletingLastPathComponent().appendingPathComponent("AppIcon-1024.png"),
+        // dev tree: src/glimpse → ../assets/
+        exe.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("assets/AppIcon.icns"),
+        exe.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("assets/AppIcon-1024.png"),
+    ]
+    for url in candidates where FileManager.default.fileExists(atPath: url.path) {
+        return url
+    }
+    return nil
+}
+
+func loadAppIconImage() -> NSImage? {
+    guard let url = resolveAppIconURL() else { return nil }
+    return NSImage(contentsOf: url)
 }
 
 // MARK: - System Info
@@ -138,6 +170,38 @@ struct Config {
     var openLinks: Bool = false
     var openLinksApp: String? = nil
     var statusItem: Bool = false
+    /// Multi-window host: stay alive, open windows via `{"type":"open",...}` protocol.
+    var hostMode: Bool = false
+    /// Default window id for single-window / first window.
+    var windowId: String = "main"
+}
+
+func configFromOpenCommand(_ json: [String: Any], defaults: Config) -> Config {
+    var c = defaults
+    if let v = json["width"] as? Int { c.width = v }
+    if let v = json["height"] as? Int { c.height = v }
+    if let v = json["title"] as? String { c.title = v }
+    if let v = json["frameless"] as? Bool { c.frameless = v }
+    if let v = json["floating"] as? Bool { c.floating = v }
+    if let v = json["transparent"] as? Bool { c.transparent = v }
+    if let v = json["clickThrough"] as? Bool { c.clickThrough = v }
+    if let v = json["hidden"] as? Bool { c.hidden = v }
+    if let v = json["autoClose"] as? Bool { c.autoClose = v }
+    if let v = json["followCursor"] as? Bool { c.followCursor = v }
+    if let v = json["cursorOffsetX"] as? Int { c.cursorOffsetX = v }
+    if let v = json["cursorOffsetY"] as? Int { c.cursorOffsetY = v }
+    if let v = json["cursorAnchor"] as? String { c.cursorAnchor = v }
+    if let v = json["followMode"] as? String { c.followMode = v }
+    if let v = json["openLinks"] as? Bool { c.openLinks = v }
+    if let v = json["openLinksApp"] as? String {
+        c.openLinks = true
+        c.openLinksApp = v
+    }
+    if let v = json["x"] as? Int { c.x = v }
+    if let v = json["y"] as? Int { c.y = v }
+    c.statusItem = false
+    c.hostMode = defaults.hostMode
+    return c
 }
 
 func parseArgs() -> Config {
@@ -197,6 +261,11 @@ func parseArgs() -> Config {
             }
         case "--status-item":
             config.statusItem = true
+        case "--host":
+            config.hostMode = true
+        case "--id":
+            i += 1
+            if i < args.count { config.windowId = args[i] }
         default:
             break
         }
@@ -240,6 +309,60 @@ class GlimpsePanel: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
+// MARK: - WebView Subclass (context menu + inspector)
+
+/// WKWebView that keeps a normal right-click menu and always exposes
+/// "Inspect Element" once developer extras / isInspectable are enabled.
+class GlimpseWebView: WKWebView {
+    weak var host: AppDelegate?
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        augmentContextMenu(menu)
+    }
+
+    private func augmentContextMenu(_ menu: NSMenu) {
+        let titles = menu.items.map { $0.title.lowercased() }
+        func hasItem(containing needle: String) -> Bool {
+            titles.contains { $0.contains(needle) }
+        }
+
+        // WebKit sometimes ships a sparse menu (e.g. blank HTML string pages).
+        // Guarantee the usual edit actions via the first-responder chain.
+        if !hasItem(containing: "copy") && !hasItem(containing: "paste") {
+            if !menu.items.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+            }
+            menu.addItem(NSMenuItem(title: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: ""))
+        }
+
+        if !hasItem(containing: "reload") {
+            if !menu.items.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+            }
+            menu.addItem(NSMenuItem(title: "Reload Page", action: #selector(WKWebView.reload(_:)), keyEquivalent: ""))
+        }
+
+        // Developer tools — WebKit adds this when developerExtrasEnabled / isInspectable,
+        // but some versions omit it; always provide a reliable entry.
+        if !hasItem(containing: "inspect") {
+            if !menu.items.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+            }
+            let inspect = NSMenuItem(
+                title: "Inspect Element",
+                action: #selector(AppDelegate.showWebInspector(_:)),
+                keyEquivalent: ""
+            )
+            inspect.target = host
+            menu.addItem(inspect)
+        }
+    }
+}
+
 // MARK: - Status Item View Controller
 
 class StatusItemViewController: NSViewController {
@@ -261,6 +384,30 @@ class StatusItemViewController: NSViewController {
     }
 }
 
+// MARK: - Per-window record (multi-window host / dock list)
+
+@MainActor
+final class WindowRecord {
+    let id: String
+    var config: Config
+    var window: NSWindow
+    var webView: WKWebView
+    var hidden: Bool
+    var cursorAnchor: String?
+    var followMode: String
+    var closed: Bool = false
+
+    init(id: String, config: Config, window: NSWindow, webView: WKWebView) {
+        self.id = id
+        self.config = config
+        self.window = window
+        self.webView = webView
+        self.hidden = config.hidden
+        self.cursorAnchor = config.cursorAnchor
+        self.followMode = config.followMode
+    }
+}
+
 // MARK: - AppDelegate
 
 @MainActor
@@ -269,6 +416,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     var window: NSWindow!
     var webView: WKWebView!
     let config: Config
+
+    /// Multi-window registry (Chrome-like single dock icon, many windows).
+    var records: [String: WindowRecord] = [:]
+    var recordOrder: [String] = []
+    var hostMode: Bool = false
 
     // Hidden state — tracks whether the window is hidden (prewarm mode)
     var hidden: Bool = false
@@ -299,9 +451,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     let springSettleThreshold: CGFloat = 0.5
 
     private func openURLInBrowser(_ url: URL) {
-        guard config.openLinks else { return }
+        let active = records.values.first(where: { $0.webView === webView })?.config
+        let openLinks = active?.openLinks ?? config.openLinks
+        let openLinksApp = active?.openLinksApp ?? config.openLinksApp
+        guard openLinks else { return }
 
-        if let appPath = config.openLinksApp {
+        if let appPath = openLinksApp {
             let appURL = URL(fileURLWithPath: appPath)
             guard FileManager.default.fileExists(atPath: appPath) else {
                 log("open-links-app: app path not found: \(appPath)")
@@ -337,17 +492,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        hostMode = config.hostMode
+
+        // AppKit routes Cmd+C/V/X/A (and undo/redo) through the main menu's
+        // key equivalents. Without an Edit menu, those shortcuts never reach
+        // WKWebView's first-responder chain.
+        setupMainMenu()
+        applyAppIcon()
+
         if config.statusItem {
             setupStatusItem()
+        } else if hostMode {
+            // Multi-window host: no window until {"type":"open",...}
+            log("host mode — waiting for open commands")
+            writeEvent(["type": "host-ready"])
         } else {
-            hidden = config.hidden
-            cursorAnchor = config.cursorAnchor
-            followMode = config.followMode
-            setupWindow()
-            setupWebView()
+            _ = createWindowRecord(id: config.windowId, windowConfig: config)
             if config.followCursor {
                 if followMode == "spring" {
-                    // Initialize spring position from the window position set by setupWindow()
                     springPosX = window.frame.origin.x
                     springPosY = window.frame.origin.y
                     let target = computeTargetPosition(mouse: NSEvent.mouseLocation)
@@ -360,61 +522,271 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         startStdinReader()
     }
 
-    // MARK: - Setup
+    /// Do NOT re-list windows here. AppKit already injects the open-window list
+    /// (with the active checkmark) into the Dock menu; returning another copy
+    /// produces the "shown twice" bug (system list + custom list).
+    /// Return nil so Dock shows the single system window list + standard items.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        nil
+    }
 
-    private func setupWindow() {
-        let rect = NSRect(x: 0, y: 0, width: config.width, height: config.height)
-        let styleMask: NSWindow.StyleMask = config.frameless
+    private func applyAppIcon() {
+        if let image = loadAppIconImage() {
+            // Prefer full-bleed bitmap; Dock applies the squircle mask itself.
+            NSApp.applicationIconImage = image
+        }
+    }
+
+    private func recordId(for window: NSWindow?) -> String? {
+        guard let window else { return nil }
+        return records.first(where: { $0.value.window === window })?.key
+    }
+
+    private func record(forWebView webView: WKWebView) -> WindowRecord? {
+        records.values.first(where: { $0.webView === webView })
+    }
+
+    private func resolveRecord(from json: [String: Any]) -> WindowRecord? {
+        if let id = json["id"] as? String {
+            return records[id]
+        }
+        // Prefer key window's record, then last created.
+        if let keyId = recordId(for: NSApp.keyWindow), let rec = records[keyId] {
+            return rec
+        }
+        if let last = recordOrder.last, let rec = records[last] {
+            return rec
+        }
+        return records.values.first
+    }
+
+    private func bindActive(from rec: WindowRecord) {
+        window = rec.window
+        webView = rec.webView
+        hidden = rec.hidden
+        cursorAnchor = rec.cursorAnchor
+        followMode = rec.followMode
+    }
+
+    private func activateRecord(_ rec: WindowRecord) {
+        bindActive(from: rec)
+        rec.hidden = false
+        hidden = false
+        if !rec.config.clickThrough {
+            NSApp.setActivationPolicy(.regular)
+        }
+        rec.window.makeKeyAndOrderFront(nil)
+        rec.window.makeFirstResponder(rec.webView)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Create a new managed window and register it for the dock menu.
+    @discardableResult
+    func createWindowRecord(id: String, windowConfig: Config) -> WindowRecord {
+        // Build window + webview using temporary config fields via helpers
+        let built = buildWindowAndWebView(windowConfig: windowConfig)
+        let rec = WindowRecord(id: id, config: windowConfig, window: built.window, webView: built.webView)
+        records[id] = rec
+        recordOrder.append(id)
+        bindActive(from: rec)
+
+        // Associate webview → host for context-menu inspector
+        if let gv = built.webView as? GlimpseWebView {
+            gv.host = self
+        }
+
+        if windowConfig.followCursor {
+            if windowConfig.followMode == "spring" {
+                springPosX = rec.window.frame.origin.x
+                springPosY = rec.window.frame.origin.y
+                let target = computeTargetPosition(mouse: NSEvent.mouseLocation)
+                springTargetX = target.x
+                springTargetY = target.y
+            }
+            startFollowingCursor()
+        }
+
+        return rec
+    }
+
+    private func buildWindowAndWebView(windowConfig: Config) -> (window: NSWindow, webView: WKWebView) {
+        let rect = NSRect(x: 0, y: 0, width: windowConfig.width, height: windowConfig.height)
+        let styleMask: NSWindow.StyleMask = windowConfig.frameless
             ? [.borderless]
             : [.titled, .closable, .miniaturizable, .resizable]
-        window = GlimpsePanel(
+        let win = GlimpsePanel(
             contentRect: rect,
             styleMask: styleMask,
             backing: .buffered,
             defer: false
         )
-        window.title = config.title
-        if config.frameless {
-            window.isMovableByWindowBackground = true
+        win.title = windowConfig.title
+        if windowConfig.frameless {
+            win.isMovableByWindowBackground = true
         }
-        if config.floating || config.followCursor {
-            window.level = .floating
+        if windowConfig.floating || windowConfig.followCursor {
+            win.level = .floating
         }
-        if config.clickThrough {
-            window.ignoresMouseEvents = true
+        if windowConfig.clickThrough {
+            win.ignoresMouseEvents = true
         }
-        if config.transparent {
-            window.isOpaque = false
-            window.backgroundColor = .clear
+        if windowConfig.transparent {
+            win.isOpaque = false
+            win.backgroundColor = .clear
         }
-        if config.followCursor {
+        if windowConfig.followCursor {
             let mouse = NSEvent.mouseLocation
-            if let anchor = cursorAnchor,
-               let base = anchorPosition(mouse: mouse, windowSize: NSSize(width: config.width, height: config.height), anchor: anchor) {
-                let x = base.x + CGFloat(config.cursorOffsetX)
-                let y = base.y + CGFloat(config.cursorOffsetY)
-                window.setFrameOrigin(NSPoint(x: x, y: y))
+            if let anchor = windowConfig.cursorAnchor,
+               let base = anchorPosition(mouse: mouse, windowSize: NSSize(width: windowConfig.width, height: windowConfig.height), anchor: anchor) {
+                let x = base.x + CGFloat(windowConfig.cursorOffsetX)
+                let y = base.y + CGFloat(windowConfig.cursorOffsetY)
+                win.setFrameOrigin(NSPoint(x: x, y: y))
             } else {
-                let x = mouse.x + CGFloat(config.cursorOffsetX)
-                let y = mouse.y + CGFloat(config.cursorOffsetY)
-                window.setFrameOrigin(NSPoint(x: x, y: y))
+                let x = mouse.x + CGFloat(windowConfig.cursorOffsetX)
+                let y = mouse.y + CGFloat(windowConfig.cursorOffsetY)
+                win.setFrameOrigin(NSPoint(x: x, y: y))
             }
-        } else if let x = config.x, let y = config.y {
-            window.setFrameOrigin(NSPoint(x: x, y: y))
+        } else if let x = windowConfig.x, let y = windowConfig.y {
+            win.setFrameOrigin(NSPoint(x: x, y: y))
         } else {
-            window.center()
+            win.center()
         }
-        window.delegate = self
-        if config.hidden {
-            // Explicitly keep the window off-screen — WKWebView loading
-            // can implicitly order the window in on macOS.
-            window.orderOut(nil)
-        } else if config.clickThrough {
-            window.orderFrontRegardless()
+        win.delegate = self
+
+        let view = installWebView(frame: win.contentView!.bounds, windowConfig: windowConfig)
+        win.contentView?.addSubview(view)
+        view.loadHTMLString("<html><body></body></html>", baseURL: nil)
+
+        if windowConfig.hidden {
+            win.orderOut(nil)
+        } else if windowConfig.clickThrough {
+            win.orderFrontRegardless()
         } else {
-            window.makeKeyAndOrderFront(nil)
+            win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
+
+        return (win, view)
+    }
+
+    // MARK: - Setup
+
+    /// Install a minimal main menu so standard edit shortcuts work in the WebView.
+    /// macOS does not deliver Cmd+C/V/X/A as raw key events to the responder chain
+    /// unless matching menu items exist — this is required even for "menu-less" tools.
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // Application menu (first item is always the app menu)
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Hide \(config.title)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+            .keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(withTitle: "Quit \(config.title)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // Edit — required for cut/copy/paste/select-all/undo/redo key equivalents
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        // View — reload + Web Inspector (developer tools)
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(withTitle: "Reload Page", action: #selector(reloadPage(_:)), keyEquivalent: "r")
+        let inspectItem = viewMenu.addItem(
+            withTitle: "Show Web Inspector",
+            action: #selector(showWebInspector(_:)),
+            keyEquivalent: "i"
+        )
+        inspectItem.keyEquivalentModifierMask = [.command, .option]
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
+        // Window — Cmd+W close is expected in macOS apps
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    /// Enable Web Inspector / "Inspect Element" for a WKWebView.
+    private func enableWebViewInspection(_ webView: WKWebView) {
+        // Public API (macOS 13.3+): required for inspectability of non-App-Store debug flows
+        // and for the system "Inspect Element" context item on modern macOS.
+        if #available(macOS 13.3, *) {
+            webView.isInspectable = true
+        }
+        // Legacy WebKit preference — still drives context-menu developer extras
+        // on some OS versions and is harmless alongside isInspectable.
+        webView.configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+    }
+
+    @objc func reloadPage(_ sender: Any?) {
+        webView?.reload()
+    }
+
+    /// Open Web Inspector (menu + context-menu entry). Uses public inspectability
+    /// plus best-effort SPI show methods across WebKit versions.
+    @objc func showWebInspector(_ sender: Any?) {
+        guard let webView else { return }
+        enableWebViewInspection(webView)
+
+        if Self.tryShowWebInspector(on: webView) {
+            return
+        }
+
+        // Fallback: inspector is available via right-click → Inspect Element
+        // once isInspectable / developerExtrasEnabled are set.
+        log("Web Inspector enabled — right-click the page and choose Inspect Element (or use View menu)")
+    }
+
+    /// Best-effort open of WebKit's Web Inspector without hard-linking private headers.
+    /// Returns true if a show path was invoked.
+    ///
+    /// On current macOS WebKit the reliable path is:
+    /// `webView._inspector` (`_WKInspector`) → `show()` / `showConsole()`.
+    private static func tryShowWebInspector(on webView: WKWebView) -> Bool {
+        // Private `_WKInspector` via getter (selector-based; no private KVC keys).
+        let getSel = NSSelectorFromString("_inspector")
+        if webView.responds(to: getSel), let unmanaged = webView.perform(getSel) {
+            let inspector = unmanaged.takeUnretainedValue()
+            for name in ["show", "showConsole"] {
+                let sel = NSSelectorFromString(name)
+                if inspector.responds(to: sel) {
+                    _ = inspector.perform(sel)
+                    return true
+                }
+            }
+        }
+
+        // Older / alternate SPI entry points
+        for name in ["_showWebViewInspector", "showWebViewInspector", "_showInspector"] {
+            let sel = NSSelectorFromString(name)
+            if webView.responds(to: sel) {
+                _ = webView.perform(sel)
+                return true
+            }
+        }
+
+        return false
     }
 
     private func makeWebViewConfiguration() -> WKWebViewConfiguration {
@@ -424,21 +796,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         ucc.add(self, name: "glimpse")
         let wkConfig = WKWebViewConfiguration()
         wkConfig.userContentController = ucc
+        // Enable developer extras early so WebKit installs Inspect Element in context menus.
+        wkConfig.preferences.setValue(true, forKey: "developerExtrasEnabled")
         return wkConfig
     }
 
-    private func setupWebView() {
-        webView = WKWebView(frame: window.contentView!.bounds, configuration: makeWebViewConfiguration())
-        webView.autoresizingMask = [.width, .height]
-        webView.navigationDelegate = self
-        if config.transparent {
-            webView.underPageBackgroundColor = .clear
-            webView.setValue(false, forKey: "drawsBackground")
+    private func installWebView(frame: NSRect, windowConfig: Config? = nil) -> GlimpseWebView {
+        let cfg = windowConfig ?? config
+        let view = GlimpseWebView(frame: frame, configuration: makeWebViewConfiguration())
+        view.host = self
+        view.autoresizingMask = [.width, .height]
+        view.navigationDelegate = self
+        enableWebViewInspection(view)
+        if cfg.transparent {
+            view.underPageBackgroundColor = .clear
+            view.setValue(false, forKey: "drawsBackground")
         }
-        window.contentView?.addSubview(webView)
-
-        // Load blank page so didFinish fires and we emit "ready"
-        webView.loadHTMLString("<html><body></body></html>", baseURL: nil)
+        return view
     }
 
     // MARK: - Status Item
@@ -447,8 +821,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         log("Setting up status item mode")
 
         let size = NSSize(width: config.width, height: config.height)
-        webView = WKWebView(frame: NSRect(origin: .zero, size: size), configuration: makeWebViewConfiguration())
-        webView.navigationDelegate = self
+        let view = installWebView(frame: NSRect(origin: .zero, size: size), windowConfig: config)
+        webView = view
 
         // Create view controller and popover
         popoverViewController = StatusItemViewController(webView: webView, size: size)
@@ -483,11 +857,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     // MARK: - Follow Cursor
 
     func computeTargetPosition(mouse: NSPoint) -> NSPoint {
+        let activeCfg = records.values.first(where: { $0.window === window })?.config ?? config
+        let ox = CGFloat(activeCfg.cursorOffsetX)
+        let oy = CGFloat(activeCfg.cursorOffsetY)
         if let anchor = cursorAnchor,
            let base = anchorPosition(mouse: mouse, windowSize: window.frame.size, anchor: anchor) {
-            return NSPoint(x: base.x + CGFloat(config.cursorOffsetX), y: base.y + CGFloat(config.cursorOffsetY))
+            return NSPoint(x: base.x + ox, y: base.y + oy)
         } else {
-            return NSPoint(x: mouse.x + CGFloat(config.cursorOffsetX), y: mouse.y + CGFloat(config.cursorOffsetY))
+            return NSPoint(x: mouse.x + ox, y: mouse.y + oy)
         }
     }
 
@@ -641,6 +1018,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
 
     func handleCommand(type: String, json: [String: Any]) {
         switch type {
+        case "open":
+            // Multi-window host: create a new window
+            guard hostMode || !records.isEmpty || !config.statusItem else {
+                log("open command ignored in status-item mode")
+                return
+            }
+            let id = (json["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
+            if records[id] != nil {
+                log("open command: window id already exists: \(id)")
+                return
+            }
+            let windowConfig = configFromOpenCommand(json, defaults: config)
+            hostMode = true
+            if !windowConfig.clickThrough && !windowConfig.hidden {
+                NSApp.setActivationPolicy(.regular)
+            }
+            _ = createWindowRecord(id: id, windowConfig: windowConfig)
+            // Optional inline HTML (normally Node waits for blank ready then sends html).
+            if let base64 = json["html"] as? String,
+               let htmlData = Data(base64Encoded: base64),
+               let html = String(data: htmlData, encoding: .utf8),
+               let rec = records[id] {
+                rec.webView.loadHTMLString(html, baseURL: nil)
+            }
+            return
+
         case "html":
             guard let base64 = json["html"] as? String,
                   let htmlData = Data(base64Encoded: base64),
@@ -649,29 +1052,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                 log("html command: missing or invalid base64 payload")
                 return
             }
-            webView.loadHTMLString(html, baseURL: nil)
+            guard let rec = resolveRecord(from: json) else {
+                log("html command: no target window")
+                return
+            }
+            bindActive(from: rec)
+            rec.webView.loadHTMLString(html, baseURL: nil)
+
         case "eval":
             guard let js = json["js"] as? String else {
                 log("eval command: missing js field")
                 return
             }
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            guard let rec = resolveRecord(from: json) else {
+                log("eval command: no target window")
+                return
+            }
+            bindActive(from: rec)
+            rec.webView.evaluateJavaScript(js, completionHandler: nil)
+
         case "follow-cursor":
             guard !config.statusItem else {
                 log("follow-cursor not supported in status-item mode")
                 return
             }
+            guard let rec = resolveRecord(from: json) else {
+                log("follow-cursor: no target window")
+                return
+            }
+            bindActive(from: rec)
             let enabled = json["enabled"] as? Bool ?? true
             if let anchor = json["anchor"] as? String, !anchor.isEmpty {
                 cursorAnchor = anchor
+                rec.cursorAnchor = anchor
             } else if json.keys.contains("anchor") {
                 cursorAnchor = nil
+                rec.cursorAnchor = nil
             }
             if let mode = json["mode"] as? String {
                 let wasSpring = followMode == "spring"
                 followMode = mode
+                rec.followMode = mode
                 if mode == "spring" && !wasSpring {
-                    // Initialize spring position to current window origin and wake timer
                     springPosX = window.frame.origin.x
                     springPosY = window.frame.origin.y
                     springVelX = 0
@@ -681,7 +1103,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                     springTargetY = target.y
                     if globalMouseMonitor != nil { wakeSpringTimer() }
                 } else if mode == "snap" && wasSpring {
-                    // Snap to target and suspend spring timer
                     springPosX = springTargetX
                     springPosY = springTargetY
                     springVelX = 0
@@ -703,9 +1124,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
             } else {
                 webView.evaluateJavaScript("window.glimpse.cursorTip = null", completionHandler: nil)
             }
+
         case "file":
             guard let path = json["path"] as? String else {
                 log("file command: missing path field")
+                return
+            }
+            guard let rec = resolveRecord(from: json) else {
+                log("file command: no target window")
                 return
             }
             let fileURL = URL(fileURLWithPath: path)
@@ -713,14 +1139,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                 log("file command: file not found: \(path)")
                 return
             }
-            webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+            bindActive(from: rec)
+            rec.webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+
         case "get-info":
+            let rec = resolveRecord(from: json)
+            if let rec { bindActive(from: rec) }
             var info = getSystemInfo()
             info["type"] = "info"
-            if !config.statusItem, let tip = computeCursorTip() {
+            if !config.statusItem, window != nil, let tip = computeCursorTip() {
                 info["cursorTip"] = tip
             }
-            writeToStdout(info)
+            writeEvent(info, id: rec?.id)
+
         case "show":
             if config.statusItem {
                 if let title = json["title"] as? String {
@@ -730,17 +1161,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 }
             } else {
+                guard let rec = resolveRecord(from: json) else {
+                    log("show command: no target window")
+                    return
+                }
                 if let title = json["title"] as? String {
-                    window.title = title
+                    rec.window.title = title
                 }
-                hidden = false
-                if !config.clickThrough {
-                    NSApp.setActivationPolicy(.regular)
-                }
-                window.makeKeyAndOrderFront(nil)
-                window.makeFirstResponder(webView)
-                NSApp.activate(ignoringOtherApps: true)
+                activateRecord(rec)
             }
+
         case "title":
             guard let title = json["title"] as? String else {
                 log("title command: missing title field")
@@ -748,9 +1178,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
             }
             if config.statusItem {
                 nsStatusItem?.button?.title = title
-            } else {
-                window.title = title
+            } else if let rec = resolveRecord(from: json) {
+                rec.window.title = title
             }
+
         case "resize":
             let w = json["width"] as? Int ?? config.width
             let h = json["height"] as? Int ?? config.height
@@ -758,13 +1189,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
             if config.statusItem {
                 popover?.contentSize = size
                 popoverViewController?.preferredContentSize = size
-            } else {
-                window.setContentSize(size)
+            } else if let rec = resolveRecord(from: json) {
+                rec.window.setContentSize(size)
             }
+
         case "close":
+            if config.statusItem {
+                closeAndExit()
+            } else if let rec = resolveRecord(from: json) {
+                closeRecord(rec, userInitiated: true)
+            } else {
+                closeAndExit()
+            }
+
+        case "quit":
             closeAndExit()
+
         default:
             log("Unknown command type: \(type)")
+        }
+    }
+
+    func closeRecord(_ rec: WindowRecord, userInitiated: Bool) {
+        guard !rec.closed else { return }
+        rec.closed = true
+        records.removeValue(forKey: rec.id)
+        recordOrder.removeAll { $0 == rec.id }
+        writeEvent(["type": "closed"], id: rec.id)
+
+        // Detach delegate to avoid re-entrancy from windowWillClose
+        rec.window.delegate = nil
+        // Only programmatically close when the host requested it — if this was
+        // triggered by windowWillClose, the window is already closing.
+        if userInitiated {
+            rec.window.close()
+        }
+
+        if records.isEmpty {
+            if hostMode {
+                // Keep host alive for more open commands (Chrome-like process).
+                log("all windows closed — host idle")
+            } else {
+                exit(0)
+            }
+        } else if window === rec.window, let nextId = recordOrder.last, let next = records[nextId] {
+            bindActive(from: next)
         }
     }
 
@@ -772,8 +1241,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
         if config.statusItem, let item = nsStatusItem {
             NSStatusBar.system.removeStatusItem(item)
             nsStatusItem = nil
+            writeEvent(["type": "closed"])
+            exit(0)
         }
-        writeToStdout(["type": "closed"])
+        // Close all windows then exit
+        let all = Array(records.values)
+        for rec in all {
+            rec.closed = true
+            rec.window.delegate = nil
+            writeEvent(["type": "closed"], id: rec.id)
+            rec.window.close()
+        }
+        records.removeAll()
+        recordOrder.removeAll()
+        if !config.statusItem && all.isEmpty {
+            writeEvent(["type": "closed"])
+        }
         exit(0)
     }
 
@@ -781,7 +1264,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
 
     nonisolated func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         MainActor.assumeIsolated {
-            guard self.config.openLinks else {
+            let rec = self.record(forWebView: webView)
+            let openLinks = rec?.config.openLinks ?? self.config.openLinks
+            guard openLinks else {
                 decisionHandler(.allow)
                 return
             }
@@ -799,6 +1284,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                 return
             }
 
+            // Temporarily prefer this record's open-links app settings
+            if let rec {
+                self.bindActive(from: rec)
+            }
             openURLInBrowser(url)
             decisionHandler(.cancel)
         }
@@ -806,22 +1295,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
 
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         MainActor.assumeIsolated {
-            if !config.statusItem {
-                if hidden {
+            let rec = self.record(forWebView: webView)
+            if let rec {
+                self.bindActive(from: rec)
+            }
+            if !config.statusItem, let rec {
+                if rec.hidden {
                     // WKWebView loading can implicitly order the window in.
-                    // Force it back out after every navigation while hidden.
-                    window.orderOut(nil)
+                    rec.window.orderOut(nil)
                 } else {
-                    window.makeFirstResponder(webView)
+                    rec.window.makeFirstResponder(webView)
                 }
             }
             var info = getSystemInfo()
             info["type"] = "ready"
-            if !config.statusItem, let tip = computeCursorTip() {
+            if !config.statusItem, window != nil, let tip = computeCursorTip() {
                 info["cursorTip"] = tip
                 webView.evaluateJavaScript("window.glimpse.cursorTip = {x: \(tip["x"]!), y: \(tip["y"]!)}", completionHandler: nil)
             }
-            writeToStdout(info)
+            writeEvent(info, id: rec?.id)
         }
     }
 
@@ -837,14 +1329,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
                 return
             }
 
+            let rec: WindowRecord?
+            if let wv = message.webView {
+                rec = self.record(forWebView: wv)
+            } else {
+                rec = nil
+            }
+            if let rec { self.bindActive(from: rec) }
+
             if json["__glimpse_close"] as? Bool == true {
-                closeAndExit()
+                if let rec {
+                    closeRecord(rec, userInitiated: true)
+                } else {
+                    closeAndExit()
+                }
                 return
             }
 
-            writeToStdout(["type": "message", "data": json])
-            if config.autoClose {
-                closeAndExit()
+            writeEvent(["type": "message", "data": json], id: rec?.id)
+            let autoClose = rec?.config.autoClose ?? config.autoClose
+            if autoClose {
+                if let rec {
+                    closeRecord(rec, userInitiated: true)
+                } else {
+                    closeAndExit()
+                }
             }
         }
     }
@@ -852,22 +1361,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScri
     // MARK: - NSWindowDelegate
 
     func windowDidResize(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow,
+              let rec = records.values.first(where: { $0.window === win }) else {
+            if window != nil, let tip = computeCursorTip() {
+                webView.evaluateJavaScript("window.glimpse.cursorTip = {x: \(tip["x"]!), y: \(tip["y"]!)}", completionHandler: nil)
+            }
+            return
+        }
+        bindActive(from: rec)
         if let tip = computeCursorTip() {
-            webView.evaluateJavaScript("window.glimpse.cursorTip = {x: \(tip["x"]!), y: \(tip["y"]!)}", completionHandler: nil)
+            rec.webView.evaluateJavaScript("window.glimpse.cursorTip = {x: \(tip["x"]!), y: \(tip["y"]!)}", completionHandler: nil)
         }
     }
 
     func windowWillClose(_ notification: Notification) {
-        writeToStdout(["type": "closed"])
-        exit(0)
+        guard let win = notification.object as? NSWindow else { return }
+        if let rec = records.values.first(where: { $0.window === win }), !rec.closed {
+            closeRecord(rec, userInitiated: false)
+        }
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow,
+              let rec = records.values.first(where: { $0.window === win }) else { return }
+        bindActive(from: rec)
     }
 }
 
 // MARK: - Entry Point
 
+// Must be set before any WKWebView is created so WebKit installs developer
+// extras (Inspect Element) into the default context menu on older macOS.
+UserDefaults.standard.set(true, forKey: "WebKitDeveloperExtras")
+
 let config = parseArgs()
 let app = NSApplication.shared
 let delegate = AppDelegate(config: config)
 app.delegate = delegate
-app.setActivationPolicy((config.statusItem || config.clickThrough || config.hidden) ? .accessory : .regular)
+// Host mode and normal windows show in Dock (Chrome-like). Accessory only for
+// menu-bar / click-through / pure hidden prewarm single-process launches.
+let accessory = config.statusItem || config.clickThrough || (config.hidden && !config.hostMode)
+app.setActivationPolicy(accessory ? .accessory : .regular)
+if let icon = loadAppIconImage() {
+    app.applicationIconImage = icon
+}
 app.run()

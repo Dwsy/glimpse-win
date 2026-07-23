@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const target = process.argv[2] || process.platform;
+const root = join(__dirname, '..');
 
 function fail(message) {
   console.error(message);
@@ -22,9 +23,43 @@ function hasCargo() {
   return !result.error && result.status === 0;
 }
 
+/** Build macOS .app bundle so Dock shows icon + "Glimpse" name. */
+function packageMacApp() {
+  const binary = join(root, 'src', 'glimpse');
+  const app = join(root, 'src', 'Glimpse.app');
+  const contents = join(app, 'Contents');
+  const macosDir = join(contents, 'MacOS');
+  const resources = join(contents, 'Resources');
+
+  rmSync(app, { recursive: true, force: true });
+  mkdirSync(macosDir, { recursive: true });
+  mkdirSync(resources, { recursive: true });
+
+  copyFileSync(binary, join(macosDir, 'glimpse'));
+  // Keep executable bit
+  spawnSync('chmod', ['+x', join(macosDir, 'glimpse')]);
+
+  const plistSrc = join(root, 'assets', 'Info.plist');
+  const icnsSrc = join(root, 'assets', 'AppIcon.icns');
+  const pngSrc = join(root, 'assets', 'AppIcon-1024.png');
+
+  if (!existsSync(plistSrc)) fail(`Missing ${plistSrc}`);
+  copyFileSync(plistSrc, join(contents, 'Info.plist'));
+
+  if (existsSync(icnsSrc)) {
+    copyFileSync(icnsSrc, join(resources, 'AppIcon.icns'));
+  }
+  if (existsSync(pngSrc)) {
+    copyFileSync(pngSrc, join(resources, 'AppIcon-1024.png'));
+  }
+
+  console.log('Packaged src/Glimpse.app (Dock icon + multi-window host)');
+}
+
 switch (target) {
   case 'darwin':
     run('swiftc', ['-O', 'src/glimpse.swift', '-o', 'src/glimpse']);
+    packageMacApp();
     break;
 
   case 'linux': {

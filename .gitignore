@@ -1,6 +1,10 @@
 # Compiled binary (do not ignore src/glimpse.swift or src/glimpse.mjs)
 src/glimpse
 src/glimpse.exe
+src/Glimpse.app/
+
+# Iconset intermediates (keep AppIcon.icns / AppIcon-1024.png)
+assets/AppIcon.iconset/
 
 # Linux build output
 src/linux/target/
